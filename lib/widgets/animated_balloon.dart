@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -11,48 +12,55 @@ class AnimatedBalloonWidget extends StatelessWidget {
     return SizedBox.expand(
       child: Stack(
         children: [
-          // ── Balloon 1  (left side, bounces at top) ───────────────
           _BalloonActor(
             spec: BalloonSpec(
-              laneX: 0.22,          // 22 % from left edge
-              sizeFactor: 0.21,     // 21 % of screen width when fully inflated
-              growSeconds: 4,       // seconds to inflate
-              riseSeconds: 6,       // seconds to rise from bottom to top
-              floatAwaySeconds: 3,  // (unused for topBounce)
-              topBounceSeconds: 0.6,// seconds for the little bounce at the top
-              mode: BalloonMode.topBounce, // stays on screen, bounces at top
-              floatDriftX: -0.10,   // (unused for topBounce)
-              phaseOffset: 0.0,     // timing offset for the gentle sway
-            ),
-          ),
-
-          // ── Balloon 2  (centre, floats off the top of the screen) ─
-          _BalloonActor(
-            spec: BalloonSpec(
-              laneX: 0.50,          // 50 % from left edge (centre)
-              sizeFactor: 0.27,     // slightly larger than the others
+              laneX: 0.22,
+              sizeFactor: 0.21,
               growSeconds: 4,
               riseSeconds: 6,
-              floatAwaySeconds: 3.5,// after reaching top, floats out of screen
-              topBounceSeconds: 0.6,// (unused for floatAway)
-              mode: BalloonMode.floatAway, // floats off then resets from bottom
-              floatDriftX: 0.00,    // no sideways drift while floating away
-              phaseOffset: 1.4,     // starts its sway cycle at a different point
+              floatAwaySeconds: 3,
+              topBounceSeconds: 0.6,
+              mode: BalloonMode.topBounce,
+              floatDriftX: -0.10,
+              phaseOffset: 0.0,
+              shadowOffset: const Offset(6, 8),
+              shadowBlurRadius: 8.0,
+              shadowColor: const Color(0x55000000),
+              gradientColors: const [Colors.white, Color(0xFFCC0000)],
             ),
           ),
-
-          // ── Balloon 3  (right side, bounces at top) ──────────────
           _BalloonActor(
             spec: BalloonSpec(
-              laneX: 0.78,          // 78 % from left edge
-              sizeFactor: 0.18,     // smallest of the three
+              laneX: 0.50,
+              sizeFactor: 0.27,
               growSeconds: 4,
-              riseSeconds: 5,       // rises a little faster
+              riseSeconds: 6,
+              floatAwaySeconds: 3.5,
+              topBounceSeconds: 0.6,
+              mode: BalloonMode.floatAway,
+              floatDriftX: 0.00,
+              phaseOffset: 1.4,
+              shadowOffset: const Offset(6, 8),
+              shadowBlurRadius: 8.0,
+              shadowColor: const Color(0x55000000),
+              gradientColors: const [Colors.white, Color(0xFF1565C0)],
+            ),
+          ),
+          _BalloonActor(
+            spec: BalloonSpec(
+              laneX: 0.78,
+              sizeFactor: 0.18,
+              growSeconds: 4,
+              riseSeconds: 5,
               floatAwaySeconds: 3,
               topBounceSeconds: 0.7,
               mode: BalloonMode.topBounce,
               floatDriftX: 0.12,
-              phaseOffset: 2.8,     // offset so it sways out of sync with the others
+              phaseOffset: 2.8,
+              shadowOffset: const Offset(6, 8),
+              shadowBlurRadius: 8.0,
+              shadowColor: const Color(0x55000000),
+              gradientColors: const [Colors.white, Color(0xFF2E7D32)],
             ),
           ),
         ],
@@ -61,13 +69,11 @@ class AnimatedBalloonWidget extends StatelessWidget {
   }
 }
 
-// Which behaviour the balloon has when it reaches the top.
 enum BalloonMode {
-  topBounce, // bounces at the top and stays on screen
-  floatAway, // floats off the top, then resets from the bottom
+  topBounce,
+  floatAway,
 }
 
-// All settings for one balloon. Edit these in AnimatedBalloonWidget.
 class BalloonSpec {
   const BalloonSpec({
     required this.laneX,
@@ -79,17 +85,25 @@ class BalloonSpec {
     required this.mode,
     required this.floatDriftX,
     required this.phaseOffset,
+    this.shadowOffset = const Offset(4, 6),
+    this.shadowBlurRadius = 6.0,
+    this.shadowColor = const Color(0x55000000),
+    this.gradientColors,
   });
 
-  final double laneX;             // horizontal position (0.0 = left, 1.0 = right)
-  final double sizeFactor;        // fully-inflated width as fraction of screen width
-  final double growSeconds;       // seconds to inflate / deflate
-  final double riseSeconds;       // seconds to rise from bottom to top
-  final double floatAwaySeconds;  // (floatAway) seconds to drift off screen
-  final double topBounceSeconds;  // (topBounce) seconds for the bounce at the top
+  final double laneX;
+  final double sizeFactor;
+  final double growSeconds;
+  final double riseSeconds;
+  final double floatAwaySeconds;
+  final double topBounceSeconds;
   final BalloonMode mode;
-  final double floatDriftX;       // (floatAway) sideways drift fraction (- = left)
-  final double phaseOffset;       // sway timing offset so balloons don't sync (0–6.28)
+  final double floatDriftX;
+  final double phaseOffset;
+  final Offset shadowOffset;
+  final double shadowBlurRadius;
+  final Color shadowColor;
+  final List<Color>? gradientColors;
 }
 
 class _BalloonActor extends StatefulWidget {
@@ -103,11 +117,10 @@ class _BalloonActor extends StatefulWidget {
 
 class _BalloonActorState extends State<_BalloonActor>
     with TickerProviderStateMixin {
-  // Animation controllers
-  late final AnimationController _controllerPath;       // rising / flying path
-  late final AnimationController _controllerGrowSize;   // inflate / deflate
-  late final AnimationController _controllerPulse;      // continuous gentle pulse
-  late final AnimationController _controllerTopBounce;  // bounce at the top
+  late final AnimationController _controllerPath;
+  late final AnimationController _controllerGrowSize;
+  late final AnimationController _controllerPulse;
+  late final AnimationController _controllerTopBounce;
   late final Animation<double> _animationGrowProgress;
   late final Animation<double> _animationPulse;
   late final AudioPlayer _sfxPlayer;
@@ -174,7 +187,6 @@ class _BalloonActorState extends State<_BalloonActor>
         _controllerPath.reverse();
         _controllerGrowSize.reverse();
       }
-      // Reset drag offset once balloon is fully back at rest.
       if (status == AnimationStatus.dismissed) {
         if (mounted) {
           setState(() {
@@ -365,27 +377,74 @@ class _BalloonActorState extends State<_BalloonActor>
               angle: totalRotation,
               child: Transform.scale(
                 scale: pulseScale,
-                child: Image.asset(
-                  'assets/images/BeginningGoogleFlutter-Balloon.png',
-                  width: balloonWidth,
-                  height: balloonHeight,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: balloonWidth,
-                      height: balloonHeight,
-                      color: Colors.blue,
-                      child: const Center(
-                        child: Icon(Icons.error, color: Colors.white),
-                      ),
-                    );
-                  },
-                ),
+                child: _buildBalloonVisual(balloonWidth, balloonHeight),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildBalloonVisual(double width, double height) {
+    final spec = widget.spec;
+
+    Image balloonImage({bool forShadow = false}) => Image.asset(
+          'assets/images/BeginningGoogleFlutter-Balloon.png',
+          width: width,
+          height: height,
+          fit: BoxFit.contain,
+          errorBuilder: forShadow
+              ? null
+              : (context, error, stackTrace) => Container(
+                    width: width,
+                    height: height,
+                    color: Colors.blue,
+                    child: const Center(
+                      child: Icon(Icons.error, color: Colors.white),
+                    ),
+                  ),
+        );
+
+    final Widget shadowLayer = ImageFiltered(
+      imageFilter: ui.ImageFilter.blur(
+        sigmaX: spec.shadowBlurRadius,
+        sigmaY: spec.shadowBlurRadius,
+        tileMode: TileMode.decal,
+      ),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.mode(spec.shadowColor, BlendMode.srcIn),
+        child: balloonImage(forShadow: true),
+      ),
+    );
+
+    Widget visibleBalloon = balloonImage();
+
+    if (spec.gradientColors != null && spec.gradientColors!.length >= 2) {
+      visibleBalloon = ShaderMask(
+        shaderCallback: (bounds) => LinearGradient(
+          colors: spec.gradientColors!,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(bounds),
+        blendMode: BlendMode.srcIn,
+        child: visibleBalloon,
+      );
+    }
+
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Transform.translate(
+            offset: spec.shadowOffset,
+            child: shadowLayer,
+          ),
+          visibleBalloon,
+        ],
+      ),
     );
   }
 
