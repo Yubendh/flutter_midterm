@@ -1,0 +1,393 @@
+import 'dart:math' as math;
+
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/material.dart';
+
+class AnimatedBalloonWidget extends StatelessWidget {
+  const AnimatedBalloonWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Stack(
+        children: [
+          // ── Balloon 1  (left side, bounces at top) ───────────────
+          _BalloonActor(
+            spec: BalloonSpec(
+              laneX: 0.22,          // 22 % from left edge
+              sizeFactor: 0.21,     // 21 % of screen width when fully inflated
+              growSeconds: 4,       // seconds to inflate
+              riseSeconds: 6,       // seconds to rise from bottom to top
+              floatAwaySeconds: 3,  // (unused for topBounce)
+              topBounceSeconds: 0.6,// seconds for the little bounce at the top
+              mode: BalloonMode.topBounce, // stays on screen, bounces at top
+              floatDriftX: -0.10,   // (unused for topBounce)
+              phaseOffset: 0.0,     // timing offset for the gentle sway
+            ),
+          ),
+
+          // ── Balloon 2  (centre, floats off the top of the screen) ─
+          _BalloonActor(
+            spec: BalloonSpec(
+              laneX: 0.50,          // 50 % from left edge (centre)
+              sizeFactor: 0.27,     // slightly larger than the others
+              growSeconds: 4,
+              riseSeconds: 6,
+              floatAwaySeconds: 3.5,// after reaching top, floats out of screen
+              topBounceSeconds: 0.6,// (unused for floatAway)
+              mode: BalloonMode.floatAway, // floats off then resets from bottom
+              floatDriftX: 0.00,    // no sideways drift while floating away
+              phaseOffset: 1.4,     // starts its sway cycle at a different point
+            ),
+          ),
+
+          // ── Balloon 3  (right side, bounces at top) ──────────────
+          _BalloonActor(
+            spec: BalloonSpec(
+              laneX: 0.78,          // 78 % from left edge
+              sizeFactor: 0.18,     // smallest of the three
+              growSeconds: 4,
+              riseSeconds: 5,       // rises a little faster
+              floatAwaySeconds: 3,
+              topBounceSeconds: 0.7,
+              mode: BalloonMode.topBounce,
+              floatDriftX: 0.12,
+              phaseOffset: 2.8,     // offset so it sways out of sync with the others
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Which behaviour the balloon has when it reaches the top.
+enum BalloonMode {
+  topBounce, // bounces at the top and stays on screen
+  floatAway, // floats off the top, then resets from the bottom
+}
+
+// All settings for one balloon. Edit these in AnimatedBalloonWidget.
+class BalloonSpec {
+  const BalloonSpec({
+    required this.laneX,
+    required this.sizeFactor,
+    required this.growSeconds,
+    required this.riseSeconds,
+    required this.floatAwaySeconds,
+    required this.topBounceSeconds,
+    required this.mode,
+    required this.floatDriftX,
+    required this.phaseOffset,
+  });
+
+  final double laneX;             // horizontal position (0.0 = left, 1.0 = right)
+  final double sizeFactor;        // fully-inflated width as fraction of screen width
+  final double growSeconds;       // seconds to inflate / deflate
+  final double riseSeconds;       // seconds to rise from bottom to top
+  final double floatAwaySeconds;  // (floatAway) seconds to drift off screen
+  final double topBounceSeconds;  // (topBounce) seconds for the bounce at the top
+  final BalloonMode mode;
+  final double floatDriftX;       // (floatAway) sideways drift fraction (- = left)
+  final double phaseOffset;       // sway timing offset so balloons don't sync (0–6.28)
+}
+
+class _BalloonActor extends StatefulWidget {
+  const _BalloonActor({required this.spec});
+
+  final BalloonSpec spec;
+
+  @override
+  State<_BalloonActor> createState() => _BalloonActorState();
+}
+
+class _BalloonActorState extends State<_BalloonActor>
+    with TickerProviderStateMixin {
+  // Animation controllers
+  late final AnimationController _controllerPath;       // rising / flying path
+  late final AnimationController _controllerGrowSize;   // inflate / deflate
+  late final AnimationController _controllerPulse;      // continuous gentle pulse
+  late final AnimationController _controllerTopBounce;  // bounce at the top
+  late final Animation<double> _animationGrowProgress;
+  late final Animation<double> _animationPulse;
+  late final AudioPlayer _sfxPlayer;
+
+  bool _isDragging = false;
+  bool _pathWasAnimating = false;
+  bool _growWasAnimating = false;
+  bool _pathWasForward = true;
+  bool _growWasForward = true;
+
+  Offset _manualOffset = Offset.zero;
+  Offset _driftOffset = Offset.zero;
+  double _interactionTilt = 0.0;
+
+  static const double _minBalloonWidth = 50.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _sfxPlayer = AudioPlayer();
+    _configureSfx();
+
+    final double pathSeconds = widget.spec.mode == BalloonMode.floatAway
+        ? widget.spec.riseSeconds + widget.spec.floatAwaySeconds
+        : widget.spec.riseSeconds;
+
+    _controllerPath = AnimationController(
+      duration: Duration(milliseconds: (pathSeconds * 1000).round()),
+      vsync: this,
+    );
+    _controllerGrowSize = AnimationController(
+      duration: Duration(milliseconds: (widget.spec.growSeconds * 1000).round()),
+      vsync: this,
+    );
+    _controllerPulse = AnimationController(
+      duration: const Duration(seconds: 3),
+      vsync: this,
+    )..repeat(reverse: true);
+    _controllerTopBounce = AnimationController(
+      duration: Duration(milliseconds: (widget.spec.topBounceSeconds * 1000).round()),
+      vsync: this,
+    );
+
+    _animationGrowProgress = CurvedAnimation(
+      parent: _controllerGrowSize,
+      curve: Curves.elasticInOut,
+      reverseCurve: Curves.easeInOut,
+    );
+    _animationPulse = Tween<double>(begin: 0.985, end: 1.015).animate(
+      CurvedAnimation(parent: _controllerPulse, curve: Curves.easeInOut),
+    );
+
+    _controllerPath.addStatusListener((status) {
+      if (status == AnimationStatus.completed &&
+          widget.spec.mode == BalloonMode.topBounce &&
+          !_isDragging) {
+        _controllerTopBounce
+          ..reset()
+          ..forward();
+      }
+      if (status == AnimationStatus.completed &&
+          widget.spec.mode == BalloonMode.floatAway &&
+          !_isDragging) {
+        _controllerPath.reverse();
+        _controllerGrowSize.reverse();
+      }
+      // Reset drag offset once balloon is fully back at rest.
+      if (status == AnimationStatus.dismissed) {
+        if (mounted) {
+          setState(() {
+            _manualOffset = Offset.zero;
+          });
+        }
+      }
+    });
+  }
+
+  Future<void> _configureSfx() async {
+    await _sfxPlayer.setVolume(0.8);
+  }
+
+  @override
+  void dispose() {
+    _sfxPlayer.dispose();
+    _controllerPath.dispose();
+    _controllerGrowSize.dispose();
+    _controllerPulse.dispose();
+    _controllerTopBounce.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleInflateDeflate() async {
+    final bool isExpanded = _controllerPath.value >= 0.999 ||
+        _controllerPath.status == AnimationStatus.completed;
+
+    if (isExpanded) {
+      await _sfxPlayer.play(AssetSource('audio/deflate.mp3'));
+      _controllerTopBounce.stop();
+      _controllerPath.reverse();
+      _controllerGrowSize.reverse();
+    } else {
+      await _sfxPlayer.play(AssetSource('audio/inflate.mp3'));
+      _controllerPath.forward();
+      _controllerGrowSize.forward();
+    }
+  }
+
+  void _pauseForDrag() {
+    _pathWasAnimating = _controllerPath.isAnimating;
+    _growWasAnimating = _controllerGrowSize.isAnimating;
+    _pathWasForward = _controllerPath.status != AnimationStatus.reverse;
+    _growWasForward = _controllerGrowSize.status != AnimationStatus.reverse;
+
+    _controllerPath.stop(canceled: false);
+    _controllerGrowSize.stop(canceled: false);
+    _controllerTopBounce.stop(canceled: false);
+  }
+
+  void _resumeAfterDrag() {
+    if (!mounted) {
+      return;
+    }
+    if (_pathWasAnimating) {
+      if (_pathWasForward) {
+        _controllerPath.forward(from: _controllerPath.value);
+      } else {
+        _controllerPath.reverse(from: _controllerPath.value);
+      }
+    }
+    if (_growWasAnimating) {
+      if (_growWasForward) {
+        _controllerGrowSize.forward(from: _controllerGrowSize.value);
+      } else {
+        _controllerGrowSize.reverse(from: _controllerGrowSize.value);
+      }
+    }
+  }
+
+  void _endDragAndResume() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isDragging = false;
+      _driftOffset = Offset.zero;
+      _interactionTilt = 0.0;
+    });
+    _resumeAfterDrag();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Size screenSize = MediaQuery.of(context).size;
+    final double viewPaddingBottom = MediaQuery.of(context).viewPadding.bottom;
+    final double fullWidth =
+        (screenSize.width * widget.spec.sizeFactor).clamp(64.0, 180.0).toDouble();
+    final double balloonHeight = fullWidth * 1.35;
+    final double startY = screenSize.height - balloonHeight - 72 - viewPaddingBottom;
+    final double topY = (screenSize.height * 0.06).clamp(8.0, 80.0).toDouble();
+    final double offscreenY = -balloonHeight * 1.25;
+    final double laneLeft = (screenSize.width * widget.spec.laneX) - (fullWidth / 2);
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _controllerPath,
+        _animationGrowProgress,
+        _animationPulse,
+        _controllerTopBounce,
+      ]),
+      builder: (context, _) {
+        final double p = _controllerPath.value.clamp(0.0, 1.0).toDouble();
+        final double growP = _animationGrowProgress.value.clamp(0.0, 1.0).toDouble();
+        final double balloonWidth = _lerp(_minBalloonWidth, fullWidth, growP);
+        double x = laneLeft;
+        double y = startY;
+
+        if (widget.spec.mode == BalloonMode.topBounce) {
+          y = _lerp(startY, topY, Curves.fastOutSlowIn.transform(p));
+        } else {
+          final double riseRatio = widget.spec.riseSeconds /
+              (widget.spec.riseSeconds + widget.spec.floatAwaySeconds);
+          if (p <= riseRatio) {
+            final double riseP = (p / riseRatio).clamp(0.0, 1.0).toDouble();
+            y = _lerp(startY, topY, Curves.fastOutSlowIn.transform(riseP));
+          } else {
+            final double awayP =
+                ((p - riseRatio) / (1.0 - riseRatio)).clamp(0.0, 1.0).toDouble();
+            y = _lerp(topY, offscreenY, Curves.easeInOut.transform(awayP));
+            x = laneLeft + (screenSize.width * widget.spec.floatDriftX * awayP);
+          }
+        }
+
+        double bounceOffset = 0.0;
+        if (widget.spec.mode == BalloonMode.topBounce) {
+          final double b = _controllerTopBounce.value.clamp(0.0, 1.0).toDouble();
+          final double amplitude = balloonHeight * 0.028;
+          bounceOffset = math.sin(b * math.pi) * amplitude * (1.0 - (b * 0.35));
+        }
+
+        final double driftRotation =
+            math.sin((_controllerPath.value * math.pi * 2) + widget.spec.phaseOffset) *
+                0.035;
+        final double totalRotation = driftRotation + _interactionTilt;
+        final double pulseScale = _animationPulse.value;
+        final double visualWidth = balloonWidth * pulseScale;
+        final double targetLeft = x + _manualOffset.dx + _driftOffset.dx;
+        final double targetTop = y + bounceOffset + _manualOffset.dy + _driftOffset.dy;
+        final double maxTopBoundary = startY;
+        final double minTopBoundary =
+            widget.spec.mode == BalloonMode.floatAway ? -balloonHeight : 0.0;
+        final double clampedLeft = targetLeft.clamp(
+          0.0,
+          math.max(0.0, screenSize.width - visualWidth),
+        ).toDouble();
+        final double clampedTop = targetTop.clamp(
+          minTopBoundary,
+          math.max(0.0, maxTopBoundary),
+        ).toDouble();
+
+        return Positioned(
+          left: clampedLeft,
+          top: clampedTop,
+          child: GestureDetector(
+            onTap: () {
+              _toggleInflateDeflate();
+            },
+            onPanStart: (_) {
+              _isDragging = true;
+              _pauseForDrag();
+            },
+            onPanUpdate: (details) {
+              setState(() {
+                _manualOffset += details.delta;
+                final double driftX =
+                    (details.delta.dx * 6).clamp(-42.0, 42.0).toDouble();
+                final double driftY =
+                    (details.delta.dy * 4).clamp(-30.0, 30.0).toDouble();
+                _driftOffset = Offset.lerp(
+                  _driftOffset,
+                  Offset(driftX, driftY),
+                  0.35,
+                )!;
+                final double targetTilt =
+                    (details.delta.dx * 0.01).clamp(-0.2, 0.2).toDouble();
+                _interactionTilt = (_interactionTilt * 0.75) + (targetTilt * 0.25);
+              });
+            },
+            onPanEnd: (_) {
+              _endDragAndResume();
+            },
+            onPanCancel: () {
+              _endDragAndResume();
+            },
+            child: Transform.rotate(
+              angle: totalRotation,
+              child: Transform.scale(
+                scale: pulseScale,
+                child: Image.asset(
+                  'assets/images/BeginningGoogleFlutter-Balloon.png',
+                  width: balloonWidth,
+                  height: balloonHeight,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: balloonWidth,
+                      height: balloonHeight,
+                      color: Colors.blue,
+                      child: const Center(
+                        child: Icon(Icons.error, color: Colors.white),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  double _lerp(double a, double b, double t) => a + ((b - a) * t);
+}
