@@ -53,8 +53,8 @@ class _AnimatedBirdsWidgetState extends State<AnimatedBirdsWidget>
         final double bird2Left = (progress * travelDistance + travelDistance * 0.58) % travelDistance - 180;
 
         // Sine wave gives each bird a gentle vertical bob.
-        final double bird1Top = _bird1BaseTop + math.sin(progress * 2 * math.pi + 0.5) * 12;
-        final double bird2Top = _bird2BaseTop + math.sin(progress * 2 * math.pi + 2.4) * 10;
+        final double bird1Top = _bird1BaseTop + math.sin(progress * 2 * math.pi + 0.5) * 32;
+        final double bird2Top = _bird2BaseTop + math.sin(progress * 2 * math.pi + 2.4) * 25;
 
         return SizedBox.expand(
           child: Stack(

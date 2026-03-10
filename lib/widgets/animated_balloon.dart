@@ -4,6 +4,9 @@ import 'dart:ui' as ui;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
+const double _driftRotationAmplitude = 0.05;  
+const double _driftRotationCycles = 2.0;       
+
 class AnimatedBalloonWidget extends StatelessWidget {
   const AnimatedBalloonWidget({super.key});
 
@@ -15,12 +18,12 @@ class AnimatedBalloonWidget extends StatelessWidget {
           _BalloonActor(
             spec: BalloonSpec(
               laneX: 0.22,
-              sizeFactor: 0.21,
+              sizeFactor: 0.35,
               growSeconds: 4,
               riseSeconds: 6,
               floatAwaySeconds: 3,
               topBounceSeconds: 0.6,
-              mode: BalloonMode.topBounce,
+              mode: BalloonMode.floatAway,
               floatDriftX: -0.10,
               phaseOffset: 0.0,
               shadowOffset: const Offset(6, 8),
@@ -32,7 +35,7 @@ class AnimatedBalloonWidget extends StatelessWidget {
           _BalloonActor(
             spec: BalloonSpec(
               laneX: 0.50,
-              sizeFactor: 0.27,
+              sizeFactor: 0.50,
               growSeconds: 4,
               riseSeconds: 6,
               floatAwaySeconds: 3.5,
@@ -135,7 +138,7 @@ class _BalloonActorState extends State<_BalloonActor>
   Offset _driftOffset = Offset.zero;
   double _interactionTilt = 0.0;
 
-  static const double _minBalloonWidth = 50.0;
+  static const double _minBalloonWidth = 80.0;
 
   @override
   void initState() {
@@ -169,7 +172,7 @@ class _BalloonActorState extends State<_BalloonActor>
       curve: Curves.elasticInOut,
       reverseCurve: Curves.easeInOut,
     );
-    _animationPulse = Tween<double>(begin: 0.985, end: 1.015).animate(
+    _animationPulse = Tween<double>(begin: 0.9850, end: 1.005).animate(
       CurvedAnimation(parent: _controllerPulse, curve: Curves.easeInOut),
     );
 
@@ -320,8 +323,8 @@ class _BalloonActorState extends State<_BalloonActor>
         }
 
         final double driftRotation =
-            math.sin((_controllerPath.value * math.pi * 2) + widget.spec.phaseOffset) *
-                0.035;
+            math.sin((_controllerPath.value * math.pi * _driftRotationCycles) + widget.spec.phaseOffset) *
+                _driftRotationAmplitude;
         final double totalRotation = driftRotation + _interactionTilt;
         final double pulseScale = _animationPulse.value;
         final double visualWidth = balloonWidth * pulseScale;

@@ -52,14 +52,14 @@ class _AnimatedCloudsWidgetState extends State<AnimatedCloudsWidget>
         final double progress = _controllerClouds.value;
 
         // Spread clouds evenly by staggering their starting offsets.
-        final double cloud1Left = (progress * travelDistance) % travelDistance - 130;
-        final double cloud2Left = (progress * travelDistance + travelDistance / 3) % travelDistance - 130;
-        final double cloud3Left = (progress * travelDistance + travelDistance * 2 / 3) % travelDistance - 130;
+        final double cloud1Left = screenSize.width - (progress * travelDistance) % travelDistance;
+        final double cloud2Left = screenSize.width - (progress * travelDistance + travelDistance / 3) % travelDistance;
+        final double cloud3Left = screenSize.width - (progress * travelDistance + travelDistance * 2 / 3) % travelDistance;
 
         // Sine wave gives each cloud a gentle vertical bob.
-        final double cloud1Top = _cloud1BaseTop + math.sin(progress * 2 * math.pi + 0.0) * 8;
-        final double cloud2Top = _cloud2BaseTop + math.sin(progress * 2 * math.pi + 1.6) * 10;
-        final double cloud3Top = _cloud3BaseTop + math.sin(progress * 2 * math.pi + 3.2) * 7;
+        final double cloud1Top = _cloud1BaseTop + math.sin(progress * 2 * math.pi + 0.0) * 32;
+        final double cloud2Top = _cloud2BaseTop + math.sin(progress * 2 * math.pi + 1.6) * 20;
+        final double cloud3Top = _cloud3BaseTop + math.sin(progress * 2 * math.pi + 3.2) * 45;
 
         return SizedBox.expand(
           child: Stack(
